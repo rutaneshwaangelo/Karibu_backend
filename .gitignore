@@ -1,6 +1,6 @@
-(
-echo node_modules/
-echo .env
-echo .env.*
-echo !.env.example
-) > .gitignore
+node_modules
+.env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
