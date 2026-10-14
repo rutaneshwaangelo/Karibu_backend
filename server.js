@@ -174,9 +174,10 @@ app.use((err, req, res, next) => {
 
 // Only start a traditional server when running locally.
 // Vercel will use the exported Express app.
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 5000;
 
+const PORT = process.env.PORT || 5000;
+
+if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(
       `[KARIBU API] Server running in ${
