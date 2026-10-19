@@ -15,9 +15,25 @@ const server = http.createServer(app);
 // SOCKET.IO
 // =====================================================
 
+// =====================================================
+// ALLOWED CORS ORIGINS
+// =====================================================
+// The frontend is deployed separately from the API, so more than one
+// origin may need access (local Vite dev server, production frontend URL...).
+// Configure with a comma-separated CORS_ORIGINS list, or a single CLIENT_URL.
+
+const allowedOrigins = (
+  process.env.CORS_ORIGINS ||
+  process.env.CLIENT_URL ||
+  'http://localhost:5173'
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
   },
@@ -35,7 +51,14 @@ connectDB();
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // Allow same-origin / non-browser requests (no Origin header)
+      // and any origin explicitly whitelisted above.
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
   })
 );
@@ -92,11 +115,11 @@ app.use('/api/customer', require('./routes/customerRoutes'));
 
 // NOTE:
 // The automatic queue engine depends on a persistent Node.js
-// process. We start it only when the server is running normally.
-// This prevents it from continuously starting inside Vercel
-// serverless requests.
+// process, so it must also run in production (Render, VPS, local).
+// We only skip it on Vercel serverless, where a long-lived
+// interval would restart inside every request.
 
-if (process.env.NODE_ENV !== 'production') {
+if (!process.env.VERCEL) {
   const { startQueueEngine } = require('./services/queueEngine');
 
   startQueueEngine(io, 5000);
