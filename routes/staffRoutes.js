@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getBusinessActiveQueue,
   staffAdjustTime,
+  completeQueueEntry,
   cancelQueueEntry,
 } = require('../controllers/queueController');
 
@@ -17,6 +18,7 @@ router.use(verifyToken, requireRole('STAFF', 'BUSINESS_OWNER'), verifyBusinessAc
 
 router.get('/queue', getBusinessActiveQueue);
 router.post('/queue/:id/adjust-time', staffAdjustTime);
+router.post('/queue/:id/complete', completeQueueEntry);
 router.post('/queue/:id/cancel', cancelQueueEntry);
 
 module.exports = router;

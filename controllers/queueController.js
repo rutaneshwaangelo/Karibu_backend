@@ -493,6 +493,68 @@ const staffAdjustTime = async (req, res, next) => {
 };
 
 /**
+ * @desc    Mark the customer currently being served as COMPLETED and promote the next
+ * @route   POST /api/staff/queue/:id/complete
+ * @access  Private (STAFF, BUSINESS_OWNER)
+ */
+const completeQueueEntry = async (req, res, next) => {
+  try {
+    const queue = await Queue.findOne({
+      _id: req.params.id,
+      businessId: req.user.businessId,
+    });
+
+    if (!queue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Queue entry not found in your business.',
+      });
+    }
+
+    if (queue.status !== 'SERVING') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot complete: customer is currently ${queue.status}, not SERVING.`,
+      });
+    }
+
+    const now = new Date();
+    queue.status = 'COMPLETED';
+    queue.completedAt = now;
+
+    if (queue.startedAt) {
+      queue.actualDurationMinutes = Math.max(
+        1,
+        Math.round((now.getTime() - new Date(queue.startedAt).getTime()) / 60000)
+      );
+    }
+
+    await queue.save();
+
+    // The desk is free again — start the next waiting customer.
+    await promoteNextCustomer(queue.businessId, req.io);
+
+    if (req.io) {
+      req.io.to(`business:${queue.businessId}`).emit('queue_updated', {
+        action: 'customer_completed',
+        queueNumber: queue.queueNumber,
+      });
+      req.io.to(`queue:${queue._id}`).emit('customer_status_changed', {
+        status: 'COMPLETED',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Queue entry ${queue.queueNumber} completed.`,
+      data: { queueId: queue._id, status: queue.status },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Cancel a queue entry (no-show or administrative cancellation)
  * @route   POST /api/business/queue/:id/cancel
  * @access  Private (BUSINESS_OWNER, STAFF)
@@ -547,5 +609,6 @@ module.exports = {
   leaveQueue,
   getBusinessActiveQueue,
   staffAdjustTime,
+  completeQueueEntry,
   cancelQueueEntry,
 };

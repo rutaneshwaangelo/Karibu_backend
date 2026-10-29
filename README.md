@@ -569,6 +569,16 @@ buttons: +5, +10, +15, −5, −10 minutes).
 `400` with the engine's reason if the entry is not `SERVING` or the adjustment is
 invalid. Recalculates wait times and emits `queue_updated` + `service_time_adjusted`.
 
+#### `POST /api/staff/queue/:id/complete` 🛡️
+
+Marks the customer currently being served as `COMPLETED` (sets `completedAt`
+and `actualDurationMinutes`) and immediately promotes the next waiting customer.
+Emits `queue_updated` (`customer_completed`) and `customer_status_changed`
+(`COMPLETED`).
+
+Body: none. Returns `{ success, message, data: { queueId, status } }`; `400` if the
+entry is not `SERVING`, `404` if it belongs to another business.
+
 #### `POST /api/staff/queue/:id/cancel` 🛡️
 
 Same behaviour as the business cancel endpoint. Body: none.

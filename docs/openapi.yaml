@@ -1267,6 +1267,46 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/staff/queue/{id}/complete:
+    post:
+      tags: [Staff]
+      summary: Complete the current service
+      description: |
+        Marks the customer being served as `COMPLETED`, records the actual
+        duration and promotes the next waiting customer.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Service completed.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        type: object
+                        properties:
+                          queueId: { type: string }
+                          status:
+                            type: string
+                            enum: [COMPLETED]
+        '400':
+          description: The entry is not currently SERVING.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/staff/queue/{id}/cancel:
     post:
       tags: [Staff]

@@ -503,3 +503,27 @@ test('admin queue overview includes the active entry', async () => {
   assert.ok(entry, 'the SERVING entry should appear in the admin overview');
   assert.equal(entry.status, 'SERVING');
 });
+
+test('staff can complete the customer being served', async () => {
+  const { status, body } = await api(
+    'POST',
+    `/api/staff/queue/${state.queueB}/complete`,
+    { token: state.ownerToken }
+  );
+
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.data.status, 'COMPLETED');
+
+  const tracked = await api('GET', `/api/customer/queue/${state.queueB}`);
+  assert.equal(tracked.body.data.status, 'COMPLETED');
+
+  const board = await api('GET', '/api/staff/queue', {
+    token: state.ownerToken,
+  });
+  assert.equal(board.body.data.currentServing, null);
+
+  const again = await api('POST', `/api/staff/queue/${state.queueB}/complete`, {
+    token: state.ownerToken,
+  });
+  assert.equal(again.status, 400);
+});

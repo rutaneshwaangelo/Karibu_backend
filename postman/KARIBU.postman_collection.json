@@ -900,6 +900,20 @@
           "response": []
         },
         {
+          "name": "Complete service",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/queue/{{queueEntryId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "staff", "queue", "{{queueEntryId}}", "complete"]
+            },
+            "description": "Marks the customer being served COMPLETED and promotes the next waiting customer. No body."
+          },
+          "response": []
+        },
+        {
           "name": "Cancel queue entry",
           "request": {
             "method": "POST",
