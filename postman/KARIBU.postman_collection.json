@@ -1,0 +1,1071 @@
+{
+  "info": {
+    "name": "KARIBU API",
+    "description": "Smart Queue Management System API.\n\nSetup:\n1. Start the backend (`npm run dev`) and import this collection.\n2. Run \"Auth > Login (Admin)\" once — the `token` collection variable is filled automatically.\n3. Run requests top-to-bottom and IDs (categoryId, businessId, serviceId, staffId, queueId, queueEntryId, subscriptionId, userId) are captured from responses.\n\nChange `baseUrl` in the collection variables if the API is not on localhost:5000. For owner/staff-only folders, log in as that role first (the same `token` variable is reused).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "token", "value": "" },
+    { "key": "categoryId", "value": "" },
+    { "key": "businessId", "value": "" },
+    { "key": "serviceId", "value": "" },
+    { "key": "staffId", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "queueId", "value": "" },
+    { "key": "queueEntryId", "value": "" },
+    { "key": "subscriptionId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Liveness check. Does not require a token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  console.log('Saved admin token');",
+                  "}",
+                  "pm.test('login succeeded', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gmail.com\",\n  \"password\": \"123karibu\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Seeded platform admin. Use john@kibalisalon.com / SalonPass2026! for the business owner and sarah@kibalisalon.com / StaffPass2026! for staff. The returned JWT is stored in `token`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Business Owner)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  if (res.user && res.user.businessId) pm.collectionVariables.set('businessId', res.user.businessId);",
+                  "}",
+                  "pm.test('login succeeded', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@kibalisalon.com\",\n  \"password\": \"SalonPass2026!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Overwrites `token` with an owner JWT. Needed for the Business and Services folders."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Staff)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  if (res.user && res.user.businessId) pm.collectionVariables.set('businessId', res.user.businessId);",
+                  "}",
+                  "pm.test('login succeeded', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sarah@kibalisalon.com\",\n  \"password\": \"StaffPass2026!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Overwrites `token` with a staff JWT. Needed for the Staff folder."
+          },
+          "response": []
+        },
+        {
+          "name": "Current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Returns the user behind the current `token`, including the populated business."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Stateless: always 200. The client must discard the token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Dashboard KPIs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "dashboard"]
+            },
+            "description": "Platform counts: businesses, categories, users, today's queues."
+          },
+          "response": []
+        },
+        {
+          "name": "List businesses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('businessId')) {",
+                  "  pm.collectionVariables.set('businessId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/businesses?status=ACTIVE&search=&category=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "businesses"],
+              "query": [
+                { "key": "status", "value": "ACTIVE" },
+                { "key": "search", "value": "" },
+                { "key": "category", "value": "" }
+              ]
+            },
+            "description": "Filters: `status`, `category` (id), `search` (name). Saves the first business id when `businessId` is empty."
+          },
+          "response": []
+        },
+        {
+          "name": "Register business",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.business) {",
+                  "  pm.collectionVariables.set('businessId', res.data.business._id);",
+                  "}",
+                  "pm.test('created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mama Njeri's Barbershop\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"ownerName\": \"Njeri Kamau\",\n  \"email\": \"njeri@example.com\",\n  \"phone\": \"+254 733 444 555\",\n  \"location\": \"Nairobi CBD\",\n  \"address\": \"Kimathi Street, 3rd Floor\",\n  \"password\": \"OwnerPass2026!\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/businesses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "businesses"]
+            },
+            "description": "Creates the owner account, business, default opening hours and a 30-day FREE_TRIAL subscription. Requires a valid `categoryId` from the Categories folder. Email must be unique."
+          },
+          "response": []
+        },
+        {
+          "name": "Update business",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Mama Njeri's Barbershop\",\n  \"location\": \"Nairobi CBD\",\n  \"address\": \"Kimathi Street, 3rd Floor\",\n  \"phone\": \"+254 733 444 555\",\n  \"email\": \"njeri@example.com\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/businesses/{{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "businesses", "{{businessId}}"]
+            },
+            "description": "Editable: name, categoryId, location, address, phone, email, status. Status values: ACTIVE, SUSPENDED, INACTIVE."
+          },
+          "response": []
+        },
+        {
+          "name": "List categories",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('categoryId')) {",
+                  "  pm.collectionVariables.set('categoryId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "categories"]
+            },
+            "description": "All categories, active and inactive. Saves the first id when `categoryId` is empty."
+          },
+          "response": []
+        },
+        {
+          "name": "Create category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data) pm.collectionVariables.set('categoryId', res.data._id);",
+                  "pm.test('created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Restaurants & Cafes\",\n  \"description\": \"Dining, takeaway counters and food courts\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "categories"]
+            },
+            "description": "Name is required and unique. Saves the new id to `categoryId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Update category",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Restaurants & Cafes\",\n  \"description\": \"Dining, takeaway counters and food courts\",\n  \"active\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "categories", "{{categoryId}}"]
+            },
+            "description": "Editable: name, description, active."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories/{{categoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "categories", "{{categoryId}}"]
+            },
+            "description": "Hard delete. Returns 400 if any business still uses the category."
+          },
+          "response": []
+        },
+        {
+          "name": "List users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('userId')) {",
+                  "  pm.collectionVariables.set('userId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users?role=STAFF&businessId={{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users"],
+              "query": [
+                { "key": "role", "value": "STAFF" },
+                { "key": "businessId", "value": "{{businessId}}" }
+              ]
+            },
+            "description": "Filters: `role`, `businessId`. Passwords excluded."
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle user status",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/{{userId}}/toggle-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "users", "{{userId}}", "toggle-status"]
+            },
+            "description": "Flips `active`. An admin cannot deactivate their own account."
+          },
+          "response": []
+        },
+        {
+          "name": "Queue overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/queues",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "queues"]
+            },
+            "description": "All SERVING and WAITING entries across every business."
+          },
+          "response": []
+        },
+        {
+          "name": "List subscriptions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('subscriptionId')) {",
+                  "  pm.collectionVariables.set('subscriptionId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/subscriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "subscriptions"]
+            },
+            "description": "All subscriptions with business populated."
+          },
+          "response": []
+        },
+        {
+          "name": "Update subscription",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"PRO\",\n  \"status\": \"ACTIVE\",\n  \"endDate\": \"2027-12-31T23:59:59.000Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/subscriptions/{{subscriptionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "subscriptions", "{{subscriptionId}}"]
+            },
+            "description": "Editable: plan, status, endDate."
+          },
+          "response": []
+        },
+        {
+          "name": "Reports",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/reports",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "reports"]
+            },
+            "description": "Completed/waiting/cancelled totals plus queue counts grouped by category."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Business (owner)",
+      "item": [
+        {
+          "name": "Dashboard KPIs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "dashboard"]
+            },
+            "description": "Requires a BUSINESS_OWNER token. Today's queues, current serving entry, waiting count, services and staff totals."
+          },
+          "response": []
+        },
+        {
+          "name": "Get profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "profile"]
+            },
+            "description": "Business document with category and owner populated."
+          },
+          "response": []
+        },
+        {
+          "name": "Update profile",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Kibali Executive Salon & Barber\",\n  \"location\": \"Nairobi West\",\n  \"address\": \"Westgate Plaza, 2nd Floor\",\n  \"phone\": \"+254 711 000 111\",\n  \"email\": \"john@kibalisalon.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/business/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "profile"]
+            },
+            "description": "Editable: name, location, address, phone, email. Status and category are admin-only."
+          },
+          "response": []
+        },
+        {
+          "name": "Live queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "const d = res.data || {};",
+                  "const entry = d.currentServing || (d.waitingList && d.waitingList[0]);",
+                  "if (entry) pm.collectionVariables.set('queueEntryId', entry._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/queue",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "queue"]
+            },
+            "description": "currentServing, waitingList, recentlyCompleted (today, max 10). Saves an entry id to `queueEntryId` for cancel/adjust."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel queue entry",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/queue/{{queueEntryId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "queue", "{{queueEntryId}}", "cancel"]
+            },
+            "description": "Marks the entry CANCELLED and promotes the next customer if it was SERVING. No body."
+          },
+          "response": []
+        },
+        {
+          "name": "List staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('staffId')) {",
+                  "  pm.collectionVariables.set('staffId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/staff",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "staff"]
+            },
+            "description": "All STAFF users of this business."
+          },
+          "response": []
+        },
+        {
+          "name": "Create staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data) pm.collectionVariables.set('staffId', res.data.id);",
+                  "pm.test('created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Brian Otieno\",\n  \"email\": \"brian@kibalisalon.com\",\n  \"phone\": \"+254 744 000 333\",\n  \"password\": \"StaffPass2026!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/business/staff",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "staff"]
+            },
+            "description": "Email must be unique across the platform. Saves the new id to `staffId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove staff",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/staff/{{staffId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "staff", "{{staffId}}"]
+            },
+            "description": "Soft delete: sets the staff account to inactive."
+          },
+          "response": []
+        },
+        {
+          "name": "Get opening hours",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/opening-hours",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "opening-hours"]
+            },
+            "description": "Up to 7 records, dayOfWeek 0 (Sunday) to 6 (Saturday)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update opening hours",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hours\": [\n    { \"dayOfWeek\": 0, \"isOpen\": false, \"openingTime\": \"10:00\", \"closingTime\": \"16:00\" },\n    { \"dayOfWeek\": 1, \"isOpen\": true, \"openingTime\": \"08:00\", \"closingTime\": \"17:00\" },\n    { \"dayOfWeek\": 2, \"isOpen\": true, \"openingTime\": \"08:00\", \"closingTime\": \"17:00\" },\n    { \"dayOfWeek\": 3, \"isOpen\": true, \"openingTime\": \"08:00\", \"closingTime\": \"17:00\" },\n    { \"dayOfWeek\": 4, \"isOpen\": true, \"openingTime\": \"08:00\", \"closingTime\": \"17:00\" },\n    { \"dayOfWeek\": 5, \"isOpen\": true, \"openingTime\": \"08:00\", \"closingTime\": \"17:00\" },\n    { \"dayOfWeek\": 6, \"isOpen\": true, \"openingTime\": \"09:00\", \"closingTime\": \"15:00\" }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/business/opening-hours",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "opening-hours"]
+            },
+            "description": "Upserts each supplied day. Times are HH:mm strings."
+          },
+          "response": []
+        },
+        {
+          "name": "Get subscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data._id) pm.collectionVariables.set('subscriptionId', res.data._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/business/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "subscription"]
+            },
+            "description": "This business's subscription, or data: null."
+          },
+          "response": []
+        },
+        {
+          "name": "Pay subscription",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"PRO\",\n  \"billingCycle\": \"monthly\",\n  \"paymentMethod\": \"Card\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/business/subscription/pay",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "business", "subscription", "pay"]
+            },
+            "description": "Simulated payment. Plans: BASIC (29/mo, 290/yr), PRO (59/mo, 590/yr), ENTERPRISE (120/mo, 1200/yr). Active subscriptions are extended from their current endDate."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Services",
+      "item": [
+        {
+          "name": "List services",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('serviceId')) {",
+                  "  pm.collectionVariables.set('serviceId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "services"]
+            },
+            "description": "Active services of the caller's business. Owner or staff token. Saves the first id to `serviceId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create service",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data) pm.collectionVariables.set('serviceId', res.data._id);",
+                  "pm.test('created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Facial Treatment\",\n  \"description\": \"Deep cleanse, mask and moisturiser\",\n  \"durationMinutes\": 40\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "services"]
+            },
+            "description": "Owner token only. durationMinutes must be 1–720. Saves the new id to `serviceId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Update service",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Facial Treatment\",\n  \"description\": \"Deep cleanse, mask and moisturiser\",\n  \"durationMinutes\": 45,\n  \"active\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "services", "{{serviceId}}"]
+            },
+            "description": "Owner token only. All fields optional."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete service",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "services", "{{serviceId}}"]
+            },
+            "description": "Owner token only. Soft delete (active = false). No body."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Staff",
+      "item": [
+        {
+          "name": "Live queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "const d = res.data || {};",
+                  "const entry = d.currentServing || (d.waitingList && d.waitingList[0]);",
+                  "if (entry) pm.collectionVariables.set('queueEntryId', entry._id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/queue",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "staff", "queue"]
+            },
+            "description": "Staff or owner token. Same payload as the business queue endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Adjust service time",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minutes\": 5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/queue/{{queueEntryId}}/adjust-time",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "staff", "queue", "{{queueEntryId}}", "adjust-time"]
+            },
+            "description": "Extends (+) or shortens (−) the entry currently being served. Recalculates everyone's wait time. Get `queueEntryId` from Live queue."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel queue entry",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/queue/{{queueEntryId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "staff", "queue", "{{queueEntryId}}", "cancel"]
+            },
+            "description": "Same as the business cancel endpoint. No body."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Customer (public)",
+      "item": [
+        {
+          "name": "List categories",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length && !pm.collectionVariables.get('categoryId')) {",
+                  "  pm.collectionVariables.set('categoryId', res.data[0]._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "categories"]
+            },
+            "description": "Active categories for the public filter bar. No token required."
+          },
+          "response": []
+        },
+        {
+          "name": "List businesses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.length) {",
+                  "  pm.collectionVariables.set('businessId', res.data[0].id);",
+                  "  if (res.data[0].services && res.data[0].services.length) {",
+                  "    pm.collectionVariables.set('serviceId', res.data[0].services[0]._id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/businesses?category=&search=&location=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "businesses"],
+              "query": [
+                { "key": "category", "value": "" },
+                { "key": "search", "value": "" },
+                { "key": "location", "value": "" }
+              ]
+            },
+            "description": "Active businesses with their services. Saves the first business and service ids for the queue requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Business details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/businesses/{{businessId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "businesses", "{{businessId}}"]
+            },
+            "description": "Single active business with its services."
+          },
+          "response": []
+        },
+        {
+          "name": "Join queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.queueId) {",
+                  "  pm.collectionVariables.set('queueId', res.data.queueId);",
+                  "  pm.collectionVariables.set('queueEntryId', res.data.queueId);",
+                  "}",
+                  "pm.test('joined', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"customerName\": \"Jane Wambui\",\n  \"customerPhone\": \"+254 700 123 456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/queue/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "queue", "join"]
+            },
+            "description": "Public. Issues a daily queue number (K001, ...) and starts serving immediately if the business is idle. Saves queueId/queueEntryId."
+          },
+          "response": []
+        },
+        {
+          "name": "Queue status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/queue/{{queueId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "queue", "{{queueId}}"]
+            },
+            "description": "Live position, status and estimated wait for one queue entry."
+          },
+          "response": []
+        },
+        {
+          "name": "Leave queue",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{baseUrl}}/api/customer/queue/{{queueId}}/leave",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customer", "queue", "{{queueId}}", "leave"]
+            },
+            "description": "Voluntarily leaves (status LEFT). No body. Returns 400 if already completed or cancelled."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

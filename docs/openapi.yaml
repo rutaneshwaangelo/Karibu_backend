@@ -1,0 +1,1768 @@
+openapi: 3.0.3
+info:
+  title: KARIBU Smart Queue Management System API
+  version: 1.0.0
+  description: |
+    REST API for KARIBU, a multi-tenant queue management platform for salons,
+    clinics, banks, government offices and other service businesses.
+
+    Customers join queues publicly and track their live position; business
+    owners manage services, staff, opening hours and subscriptions; platform
+    admins manage businesses, categories, users and subscriptions.
+
+    **Authentication** — log in via `POST /api/auth/login` and send the returned
+    JWT as `Authorization: Bearer <token>`.
+
+    **Real-time** — Socket.IO shares the API origin. Clients join
+    `business:<businessId>` or `queue:<queueId>` rooms and receive
+    `queue_updated`, `customer_status_changed` and `service_time_adjusted`.
+servers:
+  - url: http://localhost:5000
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+  - name: Admin
+  - name: Business
+  - name: Services
+  - name: Staff
+  - name: Customer
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: API is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  app:
+                    type: string
+                    example: KARIBU Smart Queue Management System
+                  version:
+                    type: string
+                    example: 1.0.0
+                  environment:
+                    type: string
+                    example: development
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate and receive a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@gmail.com
+                password:
+                  type: string
+                  format: password
+                  example: '123karibu'
+      responses:
+        '200':
+          description: Login successful.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      token:
+                        type: string
+                      user:
+                        $ref: '#/components/schemas/AuthUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Account deactivated, business missing, or business not `ACTIVE`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current user and their business
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/AuthUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out (stateless)
+      description: Always returns 200. The client is responsible for discarding the token.
+      security: []
+      responses:
+        '200':
+          description: Logged out.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Logged out successfully
+
+  /api/admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Platform dashboard KPIs
+      responses:
+        '200':
+          description: Platform counts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          totalBusinesses: { type: integer }
+                          activeBusinesses: { type: integer }
+                          totalCategories: { type: integer }
+                          totalUsers: { type: integer }
+                          queuesToday: { type: integer }
+                          activeServingCount: { type: integer }
+                          waitingCount: { type: integer }
+                          completedTodayCount: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/businesses:
+    get:
+      tags: [Admin]
+      summary: List businesses
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, SUSPENDED, INACTIVE]
+        - name: category
+          in: query
+          description: Category id.
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Case-insensitive name match.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Businesses with owner, category, service and queue counts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count:
+                        type: integer
+                      data:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: '#/components/schemas/Business'
+                            - type: object
+                              properties:
+                                serviceCount:
+                                  type: integer
+                                activeQueueCount:
+                                  type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Register a business with its owner
+      description: |
+        Creates the owner account, the business, default opening hours
+        (Sun closed; Mon–Fri 08:00–17:00; Sat 09:00–15:00) and a 30-day
+        `FREE_TRIAL` subscription.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, categoryId, ownerName, email, password]
+              properties:
+                name:
+                  type: string
+                  example: Mama Njeri's Barbershop
+                categoryId:
+                  type: string
+                  example: 65f1c2a9b3d4e5f6a7b8c9d0
+                ownerName:
+                  type: string
+                  example: Njeri Kamau
+                email:
+                  type: string
+                  format: email
+                  example: njeri@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                phone:
+                  type: string
+                  example: '+254 733 444 555'
+                location:
+                  type: string
+                  example: Nairobi CBD
+                address:
+                  type: string
+                  example: Kimathi Street, 3rd Floor
+                status:
+                  type: string
+                  enum: [ACTIVE, SUSPENDED, INACTIVE]
+                  default: ACTIVE
+      responses:
+        '201':
+          description: Business registered.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                      data:
+                        type: object
+                        properties:
+                          business:
+                            $ref: '#/components/schemas/Business'
+                          owner:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              name: { type: string }
+                              email: { type: string }
+                              role: { type: string, example: BUSINESS_OWNER }
+                          subscription:
+                            $ref: '#/components/schemas/Subscription'
+        '400':
+          description: Missing fields, duplicate email, or unknown category.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/businesses/{id}:
+    put:
+      tags: [Admin]
+      summary: Update a business
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                categoryId: { type: string }
+                location: { type: string }
+                address: { type: string }
+                phone: { type: string }
+                email: { type: string, format: email }
+                status:
+                  type: string
+                  enum: [ACTIVE, SUSPENDED, INACTIVE]
+      responses:
+        '200':
+          description: Business updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/Business'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/categories:
+    get:
+      tags: [Admin]
+      summary: List all categories
+      responses:
+        '200':
+          description: All categories, active and inactive.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Restaurants & Cafes
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Category'
+        '400':
+          description: Missing or duplicate name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/categories/{id}:
+    put:
+      tags: [Admin]
+      summary: Update a category
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Category updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Admin]
+      summary: Delete a category
+      description: Hard delete. Fails with 400 while any business uses the category.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Category deleted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Category deleted successfully
+        '400':
+          description: Category is in use.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [ADMIN, BUSINESS_OWNER, STAFF]
+        - name: businessId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Users without passwords.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/users/{id}/toggle-status:
+    patch:
+      tags: [Admin]
+      summary: Toggle a user's active status
+      description: Admins cannot deactivate their own account (400).
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Status flipped.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: Attempted to deactivate the requesting admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/queues:
+    get:
+      tags: [Admin]
+      summary: Live queue overview across all businesses
+      responses:
+        '200':
+          description: All SERVING and WAITING entries.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/QueueEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/subscriptions:
+    get:
+      tags: [Admin]
+      summary: List all subscriptions
+      responses:
+        '200':
+          description: Subscriptions with business populated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/subscriptions/{id}:
+    put:
+      tags: [Admin]
+      summary: Update a subscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan:
+                  type: string
+                  enum: [FREE_TRIAL, BASIC, PRO, ENTERPRISE]
+                status:
+                  type: string
+                  enum: [ACTIVE, EXPIRED, CANCELLED]
+                endDate:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Subscription updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/reports:
+    get:
+      tags: [Admin]
+      summary: Platform reports
+      responses:
+        '200':
+          description: Queue totals and queue counts grouped by category.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          totalQueuesServed: { type: integer }
+                          totalQueuesWaiting: { type: integer }
+                          totalCancelled: { type: integer }
+                          categoryStats:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                _id:
+                                  type: string
+                                  description: Category name.
+                                totalQueues:
+                                  type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/business/dashboard:
+    get:
+      tags: [Business]
+      summary: Business owner dashboard KPIs
+      responses:
+        '200':
+          description: Today's activity for the caller's business.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          totalQueuesToday: { type: integer }
+                          currentServing:
+                            nullable: true
+                            allOf:
+                              - $ref: '#/components/schemas/QueueEntry'
+                          waitingCount: { type: integer }
+                          completedToday: { type: integer }
+                          totalServices: { type: integer }
+                          totalStaff: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/business/profile:
+    get:
+      tags: [Business]
+      summary: Get the business profile
+      responses:
+        '200':
+          description: Business with category and owner populated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Business'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Business]
+      summary: Update the business profile
+      description: Status and category are admin-only and ignored here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                location: { type: string }
+                address: { type: string }
+                phone: { type: string }
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Profile updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/Business'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/business/queue:
+    get:
+      tags: [Business]
+      summary: Get the live queue for the caller's business
+      responses:
+        '200':
+          description: Current serving entry, waiting list and today's completions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          currentServing:
+                            nullable: true
+                            allOf:
+                              - $ref: '#/components/schemas/QueueEntry'
+                          waitingList:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/QueueEntry'
+                          recentlyCompleted:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/QueueEntry'
+                          totalWaiting: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/business/queue/{id}/cancel:
+    post:
+      tags: [Business]
+      summary: Cancel a queue entry
+      description: |
+        Marks the entry `CANCELLED`. If it was `SERVING`, the next waiting
+        customer is promoted; otherwise wait times are recalculated.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Entry cancelled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/business/staff:
+    get:
+      tags: [Business]
+      summary: List staff members
+      responses:
+        '200':
+          description: All STAFF users of the business.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Business]
+      summary: Create a staff member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  example: Brian Otieno
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                phone:
+                  type: string
+      responses:
+        '201':
+          description: Staff account created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: Missing fields or duplicate email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/business/staff/{id}:
+    delete:
+      tags: [Business]
+      summary: Remove (deactivate) a staff member
+      description: Soft delete so historical queue records stay valid.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Staff member deactivated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/business/opening-hours:
+    get:
+      tags: [Business]
+      summary: Get opening hours
+      responses:
+        '200':
+          description: Up to 7 records, sorted Sunday (0) to Saturday (6).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/OpeningHours'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [Business]
+      summary: Update opening hours
+      description: Upserts each supplied day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hours]
+              properties:
+                hours:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/OpeningHours'
+      responses:
+        '200':
+          description: Hours updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/OpeningHours'
+        '400':
+          description: The "hours" field is not an array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/business/subscription:
+    get:
+      tags: [Business]
+      summary: Get the business subscription
+      responses:
+        '200':
+          description: The subscription, or null when none exists.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        nullable: true
+                        allOf:
+                          - $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/business/subscription/pay:
+    post:
+      tags: [Business]
+      summary: Simulated subscription payment / renewal
+      description: |
+        No external gateway. Plans and USD pricing:
+        BASIC 29/mo or 290/yr, PRO 59/mo or 590/yr, ENTERPRISE 120/mo or 1200/yr.
+        An active subscription is extended from its current `endDate`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan:
+                  type: string
+                  enum: [BASIC, PRO, ENTERPRISE]
+                billingCycle:
+                  type: string
+                  enum: [monthly, yearly]
+                  default: monthly
+                paymentMethod:
+                  type: string
+                  default: Card
+      responses:
+        '200':
+          description: Payment confirmed.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/Subscription'
+        '400':
+          description: Invalid plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/services:
+    get:
+      tags: [Services]
+      summary: List services
+      description: Active services of the caller's business. Owners and staff.
+      responses:
+        '200':
+          description: Services, newest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Service'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Services]
+      summary: Create a service
+      description: Business owners only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, durationMinutes]
+              properties:
+                name:
+                  type: string
+                  example: Facial Treatment
+                description:
+                  type: string
+                durationMinutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 720
+                  example: 40
+      responses:
+        '201':
+          description: Service created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/Service'
+        '400':
+          description: Missing name or duration out of range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/services/{id}:
+    put:
+      tags: [Services]
+      summary: Update a service
+      description: Business owners only.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                durationMinutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 720
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Service updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/Service'
+        '400':
+          description: Duration out of range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Services]
+      summary: Deactivate a service
+      description: Business owners only. Soft delete, sets active to false.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Service deactivated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/staff/queue:
+    get:
+      tags: [Staff]
+      summary: Get the live queue (staff view)
+      description: Staff or owner. Same payload as `GET /api/business/queue`.
+      responses:
+        '200':
+          description: Current serving entry, waiting list and today's completions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          currentServing:
+                            nullable: true
+                            allOf:
+                              - $ref: '#/components/schemas/QueueEntry'
+                          waitingList:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/QueueEntry'
+                          recentlyCompleted:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/QueueEntry'
+                          totalWaiting: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/queue/{id}/adjust-time:
+    post:
+      tags: [Staff]
+      summary: Adjust the current service duration
+      description: |
+        Extends (+) or shortens (−) the entry being served. Recalculates
+        everyone's wait time and emits `queue_updated` and
+        `service_time_adjusted`.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minutes]
+              properties:
+                minutes:
+                  type: integer
+                  example: 5
+      responses:
+        '200':
+          description: Duration adjusted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        $ref: '#/components/schemas/QueueEntry'
+        '400':
+          description: Entry is not SERVING or the adjustment is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/queue/{id}/cancel:
+    post:
+      tags: [Staff]
+      summary: Cancel a queue entry (staff)
+      description: Same behaviour as `POST /api/business/queue/{id}/cancel`.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Entry cancelled.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/customer/categories:
+    get:
+      tags: [Customer]
+      summary: List active categories
+      security: []
+      responses:
+        '200':
+          description: Active categories, sorted by name.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Category'
+
+  /api/customer/businesses:
+    get:
+      tags: [Customer]
+      summary: List active businesses
+      security: []
+      parameters:
+        - name: category
+          in: query
+          description: Category id.
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Case-insensitive name match.
+          schema:
+            type: string
+        - name: location
+          in: query
+          description: Case-insensitive location match.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Active businesses with their active services.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      count: { type: integer }
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            name: { type: string }
+                            category: { type: string }
+                            categoryId: { type: string }
+                            location: { type: string }
+                            address: { type: string }
+                            phone: { type: string }
+                            services:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/Service'
+
+  /api/customer/businesses/{id}:
+    get:
+      tags: [Customer]
+      summary: Get business details
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The active business and its active services.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: string }
+                          name: { type: string }
+                          category: { type: string }
+                          location: { type: string }
+                          address: { type: string }
+                          phone: { type: string }
+                          email: { type: string }
+                          services:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Service'
+        '404':
+          description: Business not found or inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/customer/queue/join:
+    post:
+      tags: [Customer]
+      summary: Join a queue
+      description: |
+        Creates a customer record, issues the next daily queue number
+        (`K001`, `K002`, …) and starts serving immediately when the business
+        is idle. Emits `queue_updated` (`customer_joined`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessId, serviceId, customerName]
+              properties:
+                businessId:
+                  type: string
+                serviceId:
+                  type: string
+                customerName:
+                  type: string
+                  example: Jane Wambui
+                customerPhone:
+                  type: string
+                  example: '+254 700 123 456'
+      responses:
+        '201':
+          description: Queue entry created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message: { type: string }
+                      data:
+                        type: object
+                        properties:
+                          queueId: { type: string }
+                          queueNumber:
+                            type: string
+                            example: K001
+                          status:
+                            type: string
+                            enum: [WAITING, SERVING]
+                          position:
+                            type: integer
+                            description: 1-based position among active entries.
+                          estimatedWaitMinutes:
+                            type: integer
+                          service:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              name: { type: string }
+                              durationMinutes: { type: integer }
+                          business:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              name: { type: string }
+                              location: { type: string }
+        '400':
+          description: Missing fields, inactive business, or unavailable service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/customer/queue/{id}:
+    get:
+      tags: [Customer]
+      summary: Track a queue entry
+      description: Public live status with recalculated position.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Queue entry status.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          queueId: { type: string }
+                          queueNumber: { type: string }
+                          status:
+                            type: string
+                            enum: [WAITING, SERVING, COMPLETED, LEFT, CANCELLED]
+                          position:
+                            type: integer
+                            description: 0 while serving or finished, otherwise people ahead.
+                          estimatedWaitMinutes: { type: integer }
+                          joinedAt: { type: string, format: date-time }
+                          startedAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          expectedEndAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          extensionMinutes: { type: integer }
+                          customer:
+                            type: object
+                            properties:
+                              name: { type: string }
+                          service:
+                            type: object
+                            properties:
+                              name: { type: string }
+                              durationMinutes: { type: integer }
+                          business:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              name: { type: string }
+                              location: { type: string }
+                              address: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/customer/queue/{id}/leave:
+    post:
+      tags: [Customer]
+      summary: Leave a queue
+      description: |
+        Sets the entry to `LEFT`. Promotes the next customer if this one was
+        being served, otherwise recalculates wait times.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Left the queue.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: You have left the queue.
+        '400':
+          description: Entry is already COMPLETED or CANCELLED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      description: MongoDB ObjectId.
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid or missing input.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid or expired token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but not allowed (role, tenant or active business check).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Success:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+    AuthUser:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        role:
+          type: string
+          enum: [ADMIN, BUSINESS_OWNER, STAFF]
+        businessId:
+          type: string
+          nullable: true
+        business:
+          nullable: true
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            location: { type: string }
+            status: { type: string }
+    User:
+      type: object
+      properties:
+        _id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        role:
+          type: string
+          enum: [ADMIN, BUSINESS_OWNER, STAFF]
+        businessId:
+          type: string
+          nullable: true
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Business:
+      type: object
+      properties:
+        _id: { type: string }
+        name: { type: string }
+        categoryId:
+          type: string
+        ownerId:
+          type: string
+        location: { type: string }
+        address: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, INACTIVE]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Category:
+      type: object
+      properties:
+        _id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Service:
+      type: object
+      properties:
+        _id: { type: string }
+        businessId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        durationMinutes: { type: integer }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    QueueEntry:
+      type: object
+      properties:
+        _id: { type: string }
+        businessId: { type: string }
+        serviceId: { type: string }
+        customerId: { type: string }
+        queueNumber:
+          type: string
+          example: K001
+        status:
+          type: string
+          enum: [WAITING, SERVING, COMPLETED, LEFT, CANCELLED]
+        estimatedWaitMinutes: { type: integer }
+        extensionMinutes: { type: integer }
+        joinedAt: { type: string, format: date-time }
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expectedEndAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        leftAt:
+          type: string
+          format: date-time
+          nullable: true
+    OpeningHours:
+      type: object
+      properties:
+        _id: { type: string }
+        businessId: { type: string }
+        dayOfWeek:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0 = Sunday … 6 = Saturday.
+        isOpen: { type: boolean }
+        openingTime:
+          type: string
+          example: '08:00'
+        closingTime:
+          type: string
+          example: '17:00'
+    Subscription:
+      type: object
+      properties:
+        _id: { type: string }
+        businessId: { type: string }
+        plan:
+          type: string
+          enum: [FREE_TRIAL, BASIC, PRO, ENTERPRISE]
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, CANCELLED]
+        billingCycle:
+          type: string
+          example: trial
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        lastPaymentDate:
+          type: string
+          format: date-time
+          nullable: true
+        lastPaymentAmount:
+          type: number
+          nullable: true
+        paymentMethod:
+          type: string
+          nullable: true
