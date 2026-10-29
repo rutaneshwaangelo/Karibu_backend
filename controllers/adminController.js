@@ -18,37 +18,47 @@ const getDashboardKPIs = async (req, res, next) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [
-      totalBusinesses,
-      activeBusinesses,
-      totalCategories,
-      totalUsers,
-      queuesToday,
-      activeServingCount,
-      waitingCount,
-      completedTodayCount,
-    ] = await Promise.all([
-      Business.countDocuments(),
-      Business.countDocuments({ status: 'ACTIVE' }),
-      Category.countDocuments({ active: true }),
-      User.countDocuments(),
-      Queue.countDocuments({ joinedAt: { $gte: today } }),
-      Queue.countDocuments({ status: 'SERVING' }),
-      Queue.countDocuments({ status: 'WAITING' }),
-      Queue.countDocuments({ status: 'COMPLETED', completedAt: { $gte: today } }),
-    ]);
+    // Each collection is counted once via $facet instead of one query per KPI.
+    const [businessStats, totalCategories, totalUsers, queueStats] =
+      await Promise.all([
+        Business.aggregate([
+          {
+            $facet: {
+              total: [{ $count: 'n' }],
+              active: [{ $match: { status: 'ACTIVE' } }, { $count: 'n' }],
+            },
+          },
+        ]),
+        Category.countDocuments({ active: true }),
+        User.countDocuments(),
+        Queue.aggregate([
+          {
+            $facet: {
+              today: [{ $match: { joinedAt: { $gte: today } } }, { $count: 'n' }],
+              serving: [{ $match: { status: 'SERVING' } }, { $count: 'n' }],
+              waiting: [{ $match: { status: 'WAITING' } }, { $count: 'n' }],
+              completedToday: [
+                { $match: { status: 'COMPLETED', completedAt: { $gte: today } } },
+                { $count: 'n' },
+              ],
+            },
+          },
+        ]),
+      ]);
+
+    const facetCount = (rows, key) => rows[0]?.[key]?.[0]?.n || 0;
 
     res.status(200).json({
       success: true,
       data: {
-        totalBusinesses,
-        activeBusinesses,
+        totalBusinesses: facetCount(businessStats, 'total'),
+        activeBusinesses: facetCount(businessStats, 'active'),
         totalCategories,
         totalUsers,
-        queuesToday,
-        activeServingCount,
-        waitingCount,
-        completedTodayCount,
+        queuesToday: facetCount(queueStats, 'today'),
+        activeServingCount: facetCount(queueStats, 'serving'),
+        waitingCount: facetCount(queueStats, 'waiting'),
+        completedTodayCount: facetCount(queueStats, 'completedToday'),
       },
     });
   } catch (error) {
@@ -199,25 +209,40 @@ const getBusinesses = async (req, res, next) => {
     const businesses = await Business.find(filter)
       .populate('categoryId', 'name')
       .populate('ownerId', 'name email phone')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Aggregate active services and current queues count for each business
-    const enriched = await Promise.all(
-      businesses.map(async (biz) => {
-        const [serviceCount, activeQueueCount] = await Promise.all([
-          Service.countDocuments({ businessId: biz._id, active: true }),
-          Queue.countDocuments({
-            businessId: biz._id,
+    const businessIds = businesses.map((biz) => biz._id);
+
+    // Two grouped queries for every business, instead of two counts per business.
+    const [serviceCounts, queueCounts] = await Promise.all([
+      Service.aggregate([
+        { $match: { businessId: { $in: businessIds }, active: true } },
+        { $group: { _id: '$businessId', n: { $sum: 1 } } },
+      ]),
+      Queue.aggregate([
+        {
+          $match: {
+            businessId: { $in: businessIds },
             status: { $in: ['WAITING', 'SERVING'] },
-          }),
-        ]);
-        return {
-          ...biz.toObject(),
-          serviceCount,
-          activeQueueCount,
-        };
-      })
+          },
+        },
+        { $group: { _id: '$businessId', n: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const serviceCountByBusiness = new Map(
+      serviceCounts.map((row) => [row._id.toString(), row.n])
     );
+    const queueCountByBusiness = new Map(
+      queueCounts.map((row) => [row._id.toString(), row.n])
+    );
+
+    const enriched = businesses.map((biz) => ({
+      ...biz,
+      serviceCount: serviceCountByBusiness.get(biz._id.toString()) || 0,
+      activeQueueCount: queueCountByBusiness.get(biz._id.toString()) || 0,
+    }));
 
     res.status(200).json({
       success: true,
@@ -534,12 +559,22 @@ const updateSubscription = async (req, res, next) => {
  */
 const getReports = async (req, res, next) => {
   try {
-    const totalQueuesServed = await Queue.countDocuments({ status: 'COMPLETED' });
-    const totalQueuesWaiting = await Queue.countDocuments({ status: 'WAITING' });
-    const totalCancelled = await Queue.countDocuments({ status: { $in: ['LEFT', 'CANCELLED'] } });
+    // One $facet counts all three totals in a single round trip.
+    const queueTotals = Queue.aggregate([
+      {
+        $facet: {
+          served: [{ $match: { status: 'COMPLETED' } }, { $count: 'n' }],
+          waiting: [{ $match: { status: 'WAITING' } }, { $count: 'n' }],
+          cancelled: [
+            { $match: { status: { $in: ['LEFT', 'CANCELLED'] } } },
+            { $count: 'n' },
+          ],
+        },
+      },
+    ]);
 
     // Aggregation: queues per category
-    const categoryStats = await Queue.aggregate([
+    const categoryStatsPromise = Queue.aggregate([
       {
         $lookup: {
           from: 'businesses',
@@ -567,12 +602,18 @@ const getReports = async (req, res, next) => {
       { $sort: { totalQueues: -1 } },
     ]);
 
+    const [totals, categoryStats] = await Promise.all([
+      queueTotals,
+      categoryStatsPromise,
+    ]);
+    const facetCount = (key) => totals[0]?.[key]?.[0]?.n || 0;
+
     res.status(200).json({
       success: true,
       data: {
-        totalQueuesServed,
-        totalQueuesWaiting,
-        totalCancelled,
+        totalQueuesServed: facetCount('served'),
+        totalQueuesWaiting: facetCount('waiting'),
+        totalCancelled: facetCount('cancelled'),
         categoryStats,
       },
     });

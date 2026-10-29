@@ -129,16 +129,72 @@ const joinQueue = async (req, res, next) => {
 };
 
 /**
+ * Populate the relations needed by the public queue status payload.
+ */
+const populateQueueStatus = (query) =>
+  query
+    .populate('businessId', 'name location phone address')
+    .populate('serviceId', 'name durationMinutes')
+    .populate('customerId', 'name phone');
+
+/**
+ * Build the public payload describing where a customer is in the line.
+ */
+const buildQueueStatus = async (queue) => {
+  let position = 0;
+
+  if (queue.status === 'WAITING') {
+    // Count and existence check are independent — run them in parallel.
+    const [aheadCount, isServingExist] = await Promise.all([
+      Queue.countDocuments({
+        businessId: queue.businessId._id,
+        status: 'WAITING',
+        joinedAt: { $lt: queue.joinedAt },
+      }),
+      Queue.exists({
+        businessId: queue.businessId._id,
+        status: 'SERVING',
+      }),
+    ]);
+    position = aheadCount + (isServingExist ? 1 : 0);
+  } else if (queue.status === 'SERVING') {
+    position = 0; // You are being served now!
+  }
+
+  return {
+    queueId: queue._id,
+    queueNumber: queue.queueNumber,
+    status: queue.status,
+    position,
+    estimatedWaitMinutes: queue.estimatedWaitMinutes,
+    joinedAt: queue.joinedAt,
+    startedAt: queue.startedAt,
+    expectedEndAt: queue.expectedEndAt,
+    extensionMinutes: queue.extensionMinutes || 0,
+    customer: {
+      name: queue.customerId?.name,
+    },
+    service: {
+      name: queue.serviceId?.name,
+      durationMinutes: queue.serviceId?.durationMinutes,
+    },
+    business: {
+      id: queue.businessId?._id,
+      name: queue.businessId?.name,
+      location: queue.businessId?.location,
+      address: queue.businessId?.address,
+    },
+  };
+};
+
+/**
  * @desc    Customer tracks their live queue status
  * @route   GET /api/customer/queue/:id
  * @access  Public
  */
 const getQueueStatus = async (req, res, next) => {
   try {
-    const queue = await Queue.findById(req.params.id)
-      .populate('businessId', 'name location phone address')
-      .populate('serviceId', 'name durationMinutes')
-      .populate('customerId', 'name phone');
+    const queue = await populateQueueStatus(Queue.findById(req.params.id));
 
     if (!queue) {
       return res.status(404).json({
@@ -147,48 +203,90 @@ const getQueueStatus = async (req, res, next) => {
       });
     }
 
-    let position = 0;
-    if (queue.status === 'WAITING') {
-      const aheadCount = await Queue.countDocuments({
-        businessId: queue.businessId._id,
-        status: 'WAITING',
-        joinedAt: { $lt: queue.joinedAt },
+    res.status(200).json({
+      success: true,
+      data: await buildQueueStatus(queue),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Find a customer's place in the line by ticket number or name
+ * @route   POST /api/customer/queue/track
+ * @access  Public
+ */
+const trackQueue = async (req, res, next) => {
+  try {
+    const rawQuery =
+      req.body?.query ??
+      req.body?.ticketNumber ??
+      req.body?.queueNumber ??
+      req.body?.ticket ??
+      req.body?.name ??
+      req.body?.customerName ??
+      req.body?.search ??
+      req.query?.query ??
+      req.query?.ticket ??
+      req.query?.ticketNumber ??
+      req.query?.name ??
+      req.query?.search;
+
+    if (typeof rawQuery !== 'string' || !rawQuery.trim()) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Please enter your ticket number or the name you used to join the queue.',
       });
-      const isServingExist = await Queue.exists({
-        businessId: queue.businessId._id,
-        status: 'SERVING',
+    }
+
+    const search = rawQuery.trim();
+    const ticket = search.toUpperCase();
+    let queue = null;
+
+    if (/^K\d{1,4}$/.test(ticket)) {
+      // Ticket numbers are reused per business per day, so take the newest.
+      queue = await populateQueueStatus(
+        Queue.findOne({ queueNumber: ticket }).sort({ joinedAt: -1 })
+      );
+    } else {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const nameFilter = { name: { $regex: escaped, $options: 'i' } };
+
+      const customers = await Customer.find(nameFilter).select('_id').lean();
+
+      if (customers.length > 0) {
+        const customerIds = customers.map((customer) => customer._id);
+
+        // Prefer an entry that is still active, otherwise show the latest one.
+        queue = await populateQueueStatus(
+          Queue.findOne({
+            customerId: { $in: customerIds },
+            status: { $in: ['WAITING', 'SERVING'] },
+          }).sort({ joinedAt: -1 })
+        );
+
+        if (!queue) {
+          queue = await populateQueueStatus(
+            Queue.findOne({ customerId: { $in: customerIds } }).sort({
+              joinedAt: -1,
+            })
+          );
+        }
+      }
+    }
+
+    if (!queue) {
+      return res.status(404).json({
+        success: false,
+        message: `No queue entry found for "${search}". Check the ticket number or name and try again.`,
       });
-      position = aheadCount + (isServingExist ? 1 : 0);
-    } else if (queue.status === 'SERVING') {
-      position = 0; // You are being served now!
     }
 
     res.status(200).json({
       success: true,
-      data: {
-        queueId: queue._id,
-        queueNumber: queue.queueNumber,
-        status: queue.status,
-        position,
-        estimatedWaitMinutes: queue.estimatedWaitMinutes,
-        joinedAt: queue.joinedAt,
-        startedAt: queue.startedAt,
-        expectedEndAt: queue.expectedEndAt,
-        extensionMinutes: queue.extensionMinutes || 0,
-        customer: {
-          name: queue.customerId?.name,
-        },
-        service: {
-          name: queue.serviceId?.name,
-          durationMinutes: queue.serviceId?.durationMinutes,
-        },
-        business: {
-          id: queue.businessId?._id,
-          name: queue.businessId?.name,
-          location: queue.businessId?.location,
-          address: queue.businessId?.address,
-        },
-      },
+      data: await buildQueueStatus(queue),
     });
   } catch (error) {
     next(error);
@@ -371,6 +469,7 @@ const cancelQueueEntry = async (req, res, next) => {
 module.exports = {
   joinQueue,
   getQueueStatus,
+  trackQueue,
   leaveQueue,
   getBusinessActiveQueue,
   staffAdjustTime,

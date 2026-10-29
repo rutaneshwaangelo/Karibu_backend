@@ -27,7 +27,12 @@ const verifyToken = async (req, res, next) => {
       process.env.JWT_SECRET || 'karibu_super_secret_jwt_key_2026'
     );
 
-    const user = await User.findById(decoded.id).select('-password');
+    // Load the user and their business in a single round trip. Controllers
+    // expect `req.user.businessId` to stay an ObjectId, so the populated
+    // document is moved to `req.business` and the id restored below.
+    const user = await User.findById(decoded.id)
+      .select('-password')
+      .populate('businessId', 'name status');
 
     if (!user) {
       return res.status(401).json({
@@ -41,6 +46,11 @@ const verifyToken = async (req, res, next) => {
         success: false,
         message: 'Your account has been deactivated. Please contact administrator.',
       });
+    }
+
+    if (user.businessId && user.businessId._id) {
+      req.business = user.businessId;
+      user.businessId = user.businessId._id;
     }
 
     // Attach verified user to request object
@@ -109,8 +119,9 @@ const verifyBusinessAccess = async (req, res, next) => {
     });
   }
 
-  // Ensure the user's business itself is ACTIVE
-  const business = await Business.findById(req.user.businessId);
+  // Ensure the user's business itself is ACTIVE. verifyToken already loaded
+  // it alongside the user, so only fall back to a query when it is missing.
+  const business = req.business || (await Business.findById(req.user.businessId));
   if (!business || business.status !== 'ACTIVE') {
     return res.status(403).json({
       success: false,

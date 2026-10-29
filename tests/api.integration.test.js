@@ -370,6 +370,47 @@ test('queue status reports the live position', async () => {
   assert.equal(body.data.customer.name, 'Integration Customer B');
 });
 
+test('a customer can find their place by ticket number', async () => {
+  const ticket = (await api('GET', `/api/customer/queue/${state.queueB}`)).body
+    .data.queueNumber;
+
+  const { status, body } = await api('POST', '/api/customer/queue/track', {
+    body: { query: ticket },
+  });
+
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.data.queueId, state.queueB);
+  assert.equal(body.data.queueNumber, ticket);
+  assert.equal(body.data.status, 'WAITING');
+  assert.equal(body.data.position, 1);
+  assert.equal(body.data.customer.name, 'Integration Customer B');
+});
+
+test('a customer can find their place by the name they joined with', async () => {
+  const { status, body } = await api('POST', '/api/customer/queue/track', {
+    body: { name: 'Integration Customer B' },
+  });
+
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(body.data.queueId, state.queueB);
+});
+
+test('tracking needs a ticket number or name', async () => {
+  const { status } = await api('POST', '/api/customer/queue/track', {
+    body: {},
+  });
+
+  assert.equal(status, 400);
+});
+
+test('tracking an unknown ticket returns 404', async () => {
+  const { status } = await api('POST', '/api/customer/queue/track', {
+    body: { query: 'K999' },
+  });
+
+  assert.equal(status, 404);
+});
+
 test('joining with an unknown service is rejected', async () => {
   const { status } = await api('POST', '/api/customer/queue/join', {
     body: {

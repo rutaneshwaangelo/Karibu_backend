@@ -9,6 +9,7 @@ const {
 const {
   joinQueue,
   getQueueStatus,
+  trackQueue,
   leaveQueue,
 } = require('../controllers/queueController');
 
@@ -19,6 +20,7 @@ router.get('/categories', getPublicCategories);
 
 // Queue actions
 router.post('/queue/join', joinQueue);
+router.post('/queue/track', trackQueue);
 router.get('/queue/:id', getQueueStatus);
 router.post('/queue/:id/leave', leaveQueue);
 

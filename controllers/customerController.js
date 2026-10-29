@@ -20,28 +20,41 @@ const getActiveBusinesses = async (req, res, next) => {
 
     const businesses = await Business.find(filter)
       .populate('categoryId', 'name')
-      .sort({ name: 1 });
+      .sort({ name: 1 })
+      .lean();
 
-    // Enriched with active service count
-    const enriched = await Promise.all(
-      businesses.map(async (biz) => {
-        const services = await Service.find({
-          businessId: biz._id,
-          active: true,
-        }).select('name durationMinutes description');
+    // Fetch the services for every business in one query instead of one
+    // query per business (N+1), then group them in memory.
+    const businessIds = businesses.map((biz) => biz._id);
+    const services = await Service.find({
+      businessId: { $in: businessIds },
+      active: true,
+    })
+      .select('businessId name durationMinutes description')
+      .lean();
 
-        return {
-          id: biz._id,
-          name: biz.name,
-          category: biz.categoryId?.name,
-          categoryId: biz.categoryId?._id,
-          location: biz.location,
-          address: biz.address,
-          phone: biz.phone,
-          services,
-        };
-      })
-    );
+    const servicesByBusiness = new Map();
+    for (const service of services) {
+      const key = service.businessId.toString();
+      if (!servicesByBusiness.has(key)) servicesByBusiness.set(key, []);
+      servicesByBusiness.get(key).push({
+        _id: service._id,
+        name: service.name,
+        durationMinutes: service.durationMinutes,
+        description: service.description,
+      });
+    }
+
+    const enriched = businesses.map((biz) => ({
+      id: biz._id,
+      name: biz.name,
+      category: biz.categoryId?.name,
+      categoryId: biz.categoryId?._id,
+      location: biz.location,
+      address: biz.address,
+      phone: biz.phone,
+      services: servicesByBusiness.get(biz._id.toString()) || [],
+    }));
 
     res.status(200).json({
       success: true,
@@ -102,7 +115,7 @@ const getBusinessDetails = async (req, res, next) => {
  */
 const getPublicCategories = async (req, res, next) => {
   try {
-    const categories = await Category.find({ active: true }).sort({ name: 1 });
+    const categories = await Category.find({ active: true }).sort({ name: 1 }).lean();
     res.status(200).json({
       success: true,
       data: categories,

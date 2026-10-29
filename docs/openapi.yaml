@@ -1530,6 +1530,97 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/customer/queue/track:
+    post:
+      tags: [Customer]
+      summary: Find a place in the line by ticket number or name
+      description: |
+        Public lookup for customers who lost their ticket link. Accepts a ticket
+        number (`K001`) or the name used to join. Returns the same payload as
+        `GET /api/customer/queue/{id}`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: Ticket number or customer name.
+                  example: K001
+                ticketNumber:
+                  type: string
+                  description: Alias for `query`.
+                queueNumber:
+                  type: string
+                  description: Alias for `query`.
+                name:
+                  type: string
+                  description: Alias for `query`; matched case-insensitively.
+                customerName:
+                  type: string
+                  description: Alias for `query`.
+      responses:
+        '200':
+          description: Matching queue entry with its live position.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          queueId: { type: string }
+                          queueNumber: { type: string }
+                          status:
+                            type: string
+                            enum: [WAITING, SERVING, COMPLETED, LEFT, CANCELLED]
+                          position: { type: integer }
+                          estimatedWaitMinutes: { type: integer }
+                          joinedAt: { type: string, format: date-time }
+                          startedAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          expectedEndAt:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          extensionMinutes: { type: integer }
+                          customer:
+                            type: object
+                            properties:
+                              name: { type: string }
+                          service:
+                            type: object
+                            properties:
+                              name: { type: string }
+                              durationMinutes: { type: integer }
+                          business:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              name: { type: string }
+                              location: { type: string }
+                              address: { type: string }
+        '400':
+          description: Neither a ticket number nor a name was supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No queue entry matches the ticket number or name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/customer/queue/{id}/leave:
     post:
       tags: [Customer]

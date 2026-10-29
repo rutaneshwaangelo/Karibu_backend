@@ -40,15 +40,27 @@ const recalculateWaitTimes = async (businessId) => {
       status: 'WAITING',
     })
       .sort({ joinedAt: 1 })
-      .populate('serviceId', 'durationMinutes');
+      .populate('serviceId', 'durationMinutes')
+      .lean();
 
+    if (waitingQueue.length === 0) return;
+
+    // 3. Persist every recalculated wait in one round trip instead of one
+    // save() per waiting customer.
+    const operations = [];
     for (const item of waitingQueue) {
-      item.estimatedWaitMinutes = accumulatedWait;
-      await item.save();
+      operations.push({
+        updateOne: {
+          filter: { _id: item._id },
+          update: { $set: { estimatedWaitMinutes: accumulatedWait } },
+        },
+      });
 
       const serviceDuration = item.serviceId?.durationMinutes || 15;
       accumulatedWait += serviceDuration;
     }
+
+    await Queue.bulkWrite(operations, { ordered: false });
   } catch (error) {
     console.error(`[QueueEngine] Error recalculating wait times for business ${businessId}:`, error.message);
   }

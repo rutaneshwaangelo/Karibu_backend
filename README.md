@@ -679,6 +679,25 @@ Live status for one entry, with recalculated position.
 `position` is `0` while `SERVING`, `0` for finished entries, otherwise the number
 of people ahead (including the one being served). `404` if not found.
 
+#### `POST /api/customer/queue/track` 🔓
+
+Find a customer's place in the line when they no longer have the ticket link.
+Matches either the ticket number (`K001`) or the name used to join.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `query` | string | ✅ | Ticket number or customer name. `ticketNumber`, `queueNumber`, `name` and `customerName` are accepted as aliases, and `?query=` works too. |
+
+The response `data` is identical to `GET /api/customer/queue/:id`. Ticket numbers
+repeat per business per day, so the newest match wins; for a name, an entry that
+is still `WAITING`/`SERVING` is preferred over an older finished one.
+
+`400` when nothing was supplied, `404` when no entry matches:
+
+```json
+{ "success": false, "message": "No queue entry found for \"K999\". Check the ticket number or name and try again." }
+```
+
 #### `POST /api/customer/queue/:id/leave` 🔓
 
 Voluntarily leaves. Sets status `LEFT` and `leftAt`. If the customer was being

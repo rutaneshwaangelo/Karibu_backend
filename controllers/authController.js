@@ -1,4 +1,4 @@
-const { User, Business } = require('../models');
+const { User } = require('../models');
 const generateToken = require('../utils/generateToken');
 
 /**
@@ -17,10 +17,11 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Find user by email, explicitly including password field for verification
-    const user = await User.findOne({ email: email.toLowerCase().trim() }).select(
-      '+password'
-    );
+    // Find user by email, explicitly including password field for verification.
+    // The business is populated in the same round trip instead of a second query.
+    const user = await User.findOne({ email: email.toLowerCase().trim() })
+      .select('+password')
+      .populate('businessId', 'name location status');
 
     if (!user) {
       return res.status(401).json({
@@ -47,7 +48,7 @@ const login = async (req, res, next) => {
     // If user is owner or staff, check business status
     let businessDetails = null;
     if (user.businessId) {
-      const business = await Business.findById(user.businessId);
+      const business = user.businessId; // populated document
       if (!business) {
         return res.status(403).json({
           success: false,
@@ -66,6 +67,9 @@ const login = async (req, res, next) => {
         location: business.location,
         status: business.status,
       };
+
+      // Restore the ObjectId so the JWT payload and response stay flat.
+      user.businessId = business._id;
     }
 
     const token = generateToken(user);
@@ -95,14 +99,14 @@ const login = async (req, res, next) => {
  */
 const getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id);
-    let business = null;
+    const user = await User.findById(req.user._id).populate({
+      path: 'businessId',
+      populate: { path: 'categoryId', select: 'name' },
+    });
 
-    if (user.businessId) {
-      business = await Business.findById(user.businessId).populate(
-        'categoryId',
-        'name'
-      );
+    let business = user.businessId || null;
+    if (business) {
+      user.businessId = business._id;
     }
 
     res.status(200).json({
