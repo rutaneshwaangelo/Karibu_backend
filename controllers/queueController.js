@@ -243,50 +243,124 @@ const trackQueue = async (req, res, next) => {
 
     const search = rawQuery.trim();
     const ticket = search.toUpperCase();
-    let queue = null;
+    const activeStatuses = ['WAITING', 'SERVING'];
+    let matchedEntries = [];
 
     if (/^K\d{1,4}$/.test(ticket)) {
-      // Ticket numbers are reused per business per day, so take the newest.
-      queue = await populateQueueStatus(
-        Queue.findOne({ queueNumber: ticket }).sort({ joinedAt: -1 })
-      );
+      // One ticket number can exist per business on the same day, so return
+      // every active entry carrying it.
+      matchedEntries = await Queue.find({
+        queueNumber: ticket,
+        status: { $in: activeStatuses },
+      })
+        .populate('businessId', 'name location')
+        .populate('serviceId', 'name durationMinutes')
+        .populate('customerId', 'name')
+        .sort({ joinedAt: -1 })
+        .lean();
     } else {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const nameFilter = { name: { $regex: escaped, $options: 'i' } };
 
-      const customers = await Customer.find(nameFilter).select('_id').lean();
+      const customers = await Customer.find({
+        name: { $regex: escaped, $options: 'i' },
+      })
+        .select('_id')
+        .lean();
 
       if (customers.length > 0) {
-        const customerIds = customers.map((customer) => customer._id);
-
-        // Prefer an entry that is still active, otherwise show the latest one.
-        queue = await populateQueueStatus(
-          Queue.findOne({
-            customerId: { $in: customerIds },
-            status: { $in: ['WAITING', 'SERVING'] },
-          }).sort({ joinedAt: -1 })
-        );
-
-        if (!queue) {
-          queue = await populateQueueStatus(
-            Queue.findOne({ customerId: { $in: customerIds } }).sort({
-              joinedAt: -1,
-            })
-          );
-        }
+        matchedEntries = await Queue.find({
+          customerId: { $in: customers.map((customer) => customer._id) },
+          status: { $in: activeStatuses },
+        })
+          .populate('businessId', 'name location')
+          .populate('serviceId', 'name durationMinutes')
+          .populate('customerId', 'name')
+          .sort({ joinedAt: -1 })
+          .lean();
       }
     }
 
-    if (!queue) {
-      return res.status(404).json({
-        success: false,
-        message: `No queue entry found for "${search}". Check the ticket number or name and try again.`,
+    // A name or ticket with no live entry is a valid answer, not an error: the
+    // frontend renders its own "no active ticket" message from an empty list.
+    if (matchedEntries.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: { matches: [] },
       });
     }
 
+    const businessIds = [
+      ...new Set(
+        matchedEntries
+          .map((entry) => entry.businessId?._id?.toString())
+          .filter(Boolean)
+      ),
+    ];
+
+    // One query for every active entry in the affected businesses lets us
+    // derive positions, the counter's current ticket and the queue length.
+    const activeQueues = await Queue.find({
+      businessId: { $in: businessIds },
+      status: { $in: activeStatuses },
+    })
+      .select('businessId queueNumber status joinedAt')
+      .sort({ joinedAt: 1 })
+      .lean();
+
+    const perBusiness = new Map();
+    for (const row of activeQueues) {
+      const key = row.businessId.toString();
+      if (!perBusiness.has(key)) {
+        perBusiness.set(key, { waiting: [], serving: null });
+      }
+      const group = perBusiness.get(key);
+      if (row.status === 'SERVING') {
+        if (!group.serving) group.serving = row;
+      } else {
+        group.waiting.push(row);
+      }
+    }
+
+    const matches = matchedEntries.map((entry) => {
+      const key = entry.businessId?._id?.toString();
+      const group = key ? perBusiness.get(key) : null;
+      const waiting = group?.waiting || [];
+      const serving = group?.serving || null;
+
+      let peopleAhead = 0;
+      if (entry.status === 'WAITING') {
+        const index = waiting.findIndex(
+          (row) => row._id.toString() === entry._id.toString()
+        );
+        peopleAhead =
+          (index >= 0 ? index : waiting.length) + (serving ? 1 : 0);
+      }
+
+      return {
+        queueId: entry._id,
+        queueNumber: entry.queueNumber,
+        status: entry.status,
+        peopleAhead,
+        placeInLine: entry.status === 'SERVING' ? 1 : peopleAhead + 1,
+        estimatedWaitMinutes: entry.estimatedWaitMinutes || 0,
+        nowServing: serving ? serving.queueNumber : null,
+        totalWaiting: waiting.length,
+        business: {
+          id: entry.businessId?._id,
+          name: entry.businessId?.name,
+          location: entry.businessId?.location,
+        },
+        customer: { name: entry.customerId?.name },
+        service: {
+          name: entry.serviceId?.name,
+          durationMinutes: entry.serviceId?.durationMinutes,
+        },
+      };
+    });
+
     res.status(200).json({
       success: true,
-      data: await buildQueueStatus(queue),
+      data: { matches },
     });
   } catch (error) {
     next(error);

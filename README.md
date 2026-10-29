@@ -682,21 +682,41 @@ of people ahead (including the one being served). `404` if not found.
 #### `POST /api/customer/queue/track` 🔓
 
 Find a customer's place in the line when they no longer have the ticket link.
-Matches either the ticket number (`K001`) or the name used to join.
+Matches either the ticket number (`K001`) or the name used to join, and returns
+every still-active (`WAITING`/`SERVING`) entry that matches.
 
 | Body field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `query` | string | ✅ | Ticket number or customer name. `ticketNumber`, `queueNumber`, `name` and `customerName` are accepted as aliases, and `?query=` works too. |
+| `query` | string | ✅ | Ticket number or customer name. `ticketNumber`, `queueNumber`, `ticket`, `name`, `customerName` and `search` are accepted as aliases, and `?query=` works too. |
 
-The response `data` is identical to `GET /api/customer/queue/:id`. Ticket numbers
-repeat per business per day, so the newest match wins; for a name, an entry that
-is still `WAITING`/`SERVING` is preferred over an older finished one.
-
-`400` when nothing was supplied, `404` when no entry matches:
+`200` with a `matches` array (`[]` when nothing is queued — not an error), each item:
 
 ```json
-{ "success": false, "message": "No queue entry found for \"K999\". Check the ticket number or name and try again." }
+{
+  "success": true,
+  "data": {
+    "matches": [
+      {
+        "queueId": "...",
+        "queueNumber": "K002",
+        "status": "WAITING",
+        "peopleAhead": 1,
+        "placeInLine": 2,
+        "estimatedWaitMinutes": 30,
+        "nowServing": "K001",
+        "totalWaiting": 1,
+        "business": { "id": "...", "name": "Kibali Executive Salon & Barber", "location": "Nairobi West" },
+        "customer": { "name": "Jane Wambui" },
+        "service": { "name": "Executive Haircut", "durationMinutes": 30 }
+      }
+    ]
+  }
+}
 ```
+
+`peopleAhead` is the number of customers in front (including whoever is being
+served), `placeInLine` is the customer's own position (1-based) and `nowServing`
+is the ticket currently at the desk. `400` when no search text was supplied.
 
 #### `POST /api/customer/queue/:id/leave` 🔓
 

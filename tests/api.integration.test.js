@@ -379,11 +379,18 @@ test('a customer can find their place by ticket number', async () => {
   });
 
   assert.equal(status, 200, JSON.stringify(body));
-  assert.equal(body.data.queueId, state.queueB);
-  assert.equal(body.data.queueNumber, ticket);
-  assert.equal(body.data.status, 'WAITING');
-  assert.equal(body.data.position, 1);
-  assert.equal(body.data.customer.name, 'Integration Customer B');
+  assert.equal(body.data.matches.length, 1);
+
+  const [match] = body.data.matches;
+  assert.equal(match.queueId, state.queueB);
+  assert.equal(match.queueNumber, ticket);
+  assert.equal(match.status, 'WAITING');
+  assert.equal(match.peopleAhead, 1);
+  assert.equal(match.placeInLine, 2);
+  assert.equal(match.totalWaiting, 1);
+  assert.match(match.nowServing, /^K\d{3}$/);
+  assert.equal(match.customer.name, 'Integration Customer B');
+  assert.equal(match.business.name, `Integration Salon ${stamp}`);
 });
 
 test('a customer can find their place by the name they joined with', async () => {
@@ -392,7 +399,9 @@ test('a customer can find their place by the name they joined with', async () =>
   });
 
   assert.equal(status, 200, JSON.stringify(body));
-  assert.equal(body.data.queueId, state.queueB);
+  const match = body.data.matches.find((row) => row.queueId === state.queueB);
+  assert.ok(match, 'the active ticket should be among the matches');
+  assert.equal(match.customer.name, 'Integration Customer B');
 });
 
 test('tracking needs a ticket number or name', async () => {
@@ -403,12 +412,13 @@ test('tracking needs a ticket number or name', async () => {
   assert.equal(status, 400);
 });
 
-test('tracking an unknown ticket returns 404', async () => {
-  const { status } = await api('POST', '/api/customer/queue/track', {
+test('tracking an unknown ticket returns an empty match list', async () => {
+  const { status, body } = await api('POST', '/api/customer/queue/track', {
     body: { query: 'K999' },
   });
 
-  assert.equal(status, 404);
+  assert.equal(status, 200);
+  assert.deepEqual(body.data.matches, []);
 });
 
 test('joining with an unknown service is rejected', async () => {

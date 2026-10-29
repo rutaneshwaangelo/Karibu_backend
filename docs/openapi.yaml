@@ -1536,8 +1536,9 @@ paths:
       summary: Find a place in the line by ticket number or name
       description: |
         Public lookup for customers who lost their ticket link. Accepts a ticket
-        number (`K001`) or the name used to join. Returns the same payload as
-        `GET /api/customer/queue/{id}`.
+        number (`K001`) or the name used to join, and returns every still-active
+        (`WAITING`/`SERVING`) entry that matches. An empty `matches` array means
+        no active ticket was found.
       security: []
       requestBody:
         required: true
@@ -1564,7 +1565,7 @@ paths:
                   description: Alias for `query`.
       responses:
         '200':
-          description: Matching queue entry with its live position.
+          description: Active queue entries matching the search (empty when none).
           content:
             application/json:
               schema:
@@ -1575,47 +1576,45 @@ paths:
                       data:
                         type: object
                         properties:
-                          queueId: { type: string }
-                          queueNumber: { type: string }
-                          status:
-                            type: string
-                            enum: [WAITING, SERVING, COMPLETED, LEFT, CANCELLED]
-                          position: { type: integer }
-                          estimatedWaitMinutes: { type: integer }
-                          joinedAt: { type: string, format: date-time }
-                          startedAt:
-                            type: string
-                            format: date-time
-                            nullable: true
-                          expectedEndAt:
-                            type: string
-                            format: date-time
-                            nullable: true
-                          extensionMinutes: { type: integer }
-                          customer:
-                            type: object
-                            properties:
-                              name: { type: string }
-                          service:
-                            type: object
-                            properties:
-                              name: { type: string }
-                              durationMinutes: { type: integer }
-                          business:
-                            type: object
-                            properties:
-                              id: { type: string }
-                              name: { type: string }
-                              location: { type: string }
-                              address: { type: string }
+                          matches:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                queueId: { type: string }
+                                queueNumber: { type: string }
+                                status:
+                                  type: string
+                                  enum: [WAITING, SERVING]
+                                peopleAhead:
+                                  type: integer
+                                  description: Customers in front, including whoever is being served.
+                                placeInLine:
+                                  type: integer
+                                  description: The customer's own 1-based position.
+                                estimatedWaitMinutes: { type: integer }
+                                nowServing:
+                                  type: string
+                                  nullable: true
+                                  description: Ticket currently at the desk for this business.
+                                totalWaiting: { type: integer }
+                                business:
+                                  type: object
+                                  properties:
+                                    id: { type: string }
+                                    name: { type: string }
+                                    location: { type: string }
+                                customer:
+                                  type: object
+                                  properties:
+                                    name: { type: string }
+                                service:
+                                  type: object
+                                  properties:
+                                    name: { type: string }
+                                    durationMinutes: { type: integer }
         '400':
           description: Neither a ticket number nor a name was supplied.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: No queue entry matches the ticket number or name.
           content:
             application/json:
               schema:
